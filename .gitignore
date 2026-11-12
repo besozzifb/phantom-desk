@@ -1,0 +1,12 @@
+# local updater (runs on the box, not part of the public site)
+push_loop.pid
+push_loop.sh
+*.log
+.DS_Store
+
+# never commit secrets
+secrets/
+*.pem
+*.key
+.env
+.env.*
