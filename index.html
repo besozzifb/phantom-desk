@@ -126,14 +126,29 @@
     padding: 3px 8px 3px 7px;
   }
   .live-badge i {
-    width: 6px; height: 6px; border-radius: 50%;
+    width: 7px; height: 7px; border-radius: 50%;
     background: var(--green);
-    box-shadow: 0 0 8px var(--green);
-    animation: pulse 1.8s ease-in-out infinite;
+    box-shadow: 0 0 10px var(--green);
+    animation: pulse 1.15s ease-in-out infinite;
+    position: relative;
+  }
+  .live-badge:not(.off) i::after {
+    content: "";
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 7px; height: 7px;
+    margin: -3.5px 0 0 -3.5px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 0 rgba(61,255,122,.7);
+    animation: liveRing 1.15s ease-out infinite;
+  }
+  @keyframes liveRing {
+    0% { box-shadow: 0 0 0 0 rgba(61,255,122,.65); opacity: 1; }
+    100% { box-shadow: 0 0 0 9px rgba(61,255,122,0); opacity: 0; }
   }
   .live-badge.off { color: var(--red); background: var(--red-dim); border-color: rgba(255,77,94,.4); }
   .live-badge.off i { background: var(--red); box-shadow: 0 0 8px var(--red); animation: none; }
-  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.85); } }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .4; transform: scale(.72); } }
   .clock { font-variant-numeric: tabular-nums; font-size: 10.5px; color: var(--dim); }
 
   main { position: relative; z-index: 1; padding: 8px var(--pad) 0; }
@@ -456,13 +471,17 @@
 
   .skel { pointer-events: none; }
   .skel .balance, .skel .usd, .skel .pnl-pill, .skel .chart-wrap,
-  .skel .agent, .skel .empty {
-    background: linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,.09), rgba(255,255,255,.04));
+  .skel .agent, .skel .empty, .skel .wl {
+    background: linear-gradient(90deg, rgba(255,255,255,.035), rgba(255,255,255,.12), rgba(255,255,255,.035));
     background-size: 200% 100%;
-    animation: shimmer 1.2s ease-in-out infinite;
+    animation: shimmer 1.05s ease-in-out infinite;
     color: transparent !important;
     border-color: transparent;
+    border-radius: 10px;
   }
+  .skel .balance { border-radius: 14px; min-height: 52px; min-width: 180px; }
+  .skel .usd { min-height: 18px; width: 120px; }
+  .skel .pnl-pill { min-height: 34px; width: 220px; }
   @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 
   @media (min-width: 640px) {
@@ -473,6 +492,51 @@
       background: var(--bg);
     }
   }
+  .balance, .usd { font-variant-numeric: tabular-nums; }
+  .flash-up { animation: flashUp .7s ease; }
+  .flash-dn { animation: flashDn .7s ease; }
+  @keyframes flashUp {
+    0% { color: var(--green); text-shadow: 0 0 22px rgba(61,255,122,.55); }
+    100% { text-shadow: none; }
+  }
+  @keyframes flashDn {
+    0% { color: var(--red); text-shadow: 0 0 22px rgba(255,77,94,.5); }
+    100% { text-shadow: none; }
+  }
+  .pnl-pill.flash-up {
+    animation: pillUp .7s ease;
+  }
+  .pnl-pill.flash-dn {
+    animation: pillDn .7s ease;
+  }
+  @keyframes pillUp {
+    0% { box-shadow: 0 0 0 1px rgba(61,255,122,.55), 0 0 24px rgba(61,255,122,.28); }
+    100% { box-shadow: none; }
+  }
+  @keyframes pillDn {
+    0% { box-shadow: 0 0 0 1px rgba(255,77,94,.5), 0 0 24px rgba(255,77,94,.22); }
+    100% { box-shadow: none; }
+  }
+  .item {
+    border-radius: 10px;
+    margin: 0 -6px;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .item.enter {
+    animation: itemIn .65s ease;
+  }
+  .item.enter.sell-enter { animation-name: itemInSell; }
+  @keyframes itemIn {
+    0% { opacity: 0; transform: translateY(-14px); background: rgba(61,255,122,.18); }
+    100% { opacity: 1; transform: none; background: transparent; }
+  }
+  @keyframes itemInSell {
+    0% { opacity: 0; transform: translateY(-14px); background: rgba(255,77,94,.18); }
+    100% { opacity: 1; transform: none; background: transparent; }
+  }
+  #eq-line, #eq-area { will-change: d; }
+
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; transition: none !important; }
   }
@@ -571,7 +635,7 @@
 
       <footer>
         <div class="conn" id="conn">Connessione al desk…</div>
-        <div>Dati reali dal desk live · aggiornamento ogni 3s</div>
+        <div>Dati reali dal desk live · aggiornamento continuo</div>
         <div>I fondi restano sul tuo wallet · nessuna custodia di terzi</div>
       </footer>
     </main>
@@ -583,11 +647,97 @@
 (function () {
   "use strict";
 
-  var POLL_MS = 3000;
+  var POLL_MS = 1500;
+  var TWEEN_MS = 600;
   var $ = function (id) { return document.getElementById(id); };
   var lastState = null;
   var killsOpen = false;
   var chartPoints = [];
+  var reduceMotion = false;
+  try { reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+  var anims = {};
+  var heroPrev = { sol: null, usd: null, pnlSol: null, pnlUsd: null, pnlPct: null };
+  var seenTradeKeys = null;
+  var lastSeenTsRome = null;
+  var lastSeenAt = 0;
+  var lastConnOk = false;
+  var inFlight = false;
+  var chartRaf = null;
+  var lastChartModel = null;
+  var chartTipUsable = [];
+  var chartTipBound = false;
+
+  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+  function cancelAnim(key) {
+    if (anims[key]) { cancelAnimationFrame(anims[key]); delete anims[key]; }
+  }
+  function animateNum(key, from, to, apply) {
+    cancelAnim(key);
+    if (to == null || Number.isNaN(Number(to))) { apply(null); return; }
+    to = Number(to);
+    if (reduceMotion || from == null || Number.isNaN(Number(from))) {
+      apply(to);
+      return;
+    }
+    from = Number(from);
+    if (from === to) { apply(to); return; }
+    var t0 = performance.now();
+    function frame(now) {
+      var t = Math.min(1, (now - t0) / TWEEN_MS);
+      apply(from + (to - from) * easeOutCubic(t));
+      if (t < 1) anims[key] = requestAnimationFrame(frame);
+      else delete anims[key];
+    }
+    anims[key] = requestAnimationFrame(frame);
+  }
+  function flash(el, dir) {
+    if (!el || reduceMotion || !dir) return;
+    el.classList.remove("flash-up", "flash-dn");
+    void el.offsetWidth;
+    el.classList.add(dir === "up" ? "flash-up" : "flash-dn");
+    window.setTimeout(function () {
+      el.classList.remove("flash-up", "flash-dn");
+    }, 750);
+  }
+  function changeDir(from, to, minAbs) {
+    if (from == null || to == null || Number.isNaN(Number(from)) || Number.isNaN(Number(to))) return null;
+    var d = Number(to) - Number(from);
+    if (Math.abs(d) < (minAbs || 0)) return null;
+    return d > 0 ? "up" : "dn";
+  }
+  function ageText(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));
+    if (s <= 1) return "aggiornato ora";
+    if (s < 60) return "aggiornato " + s + "s fa";
+    var m = Math.floor(s / 60);
+    if (s < 3600) return "aggiornato " + m + " min fa";
+    var h = Math.floor(s / 3600);
+    return "aggiornato " + h + "h fa";
+  }
+  function updateAge() {
+    if (!lastSeenAt) return;
+    var txt = ageText(Date.now() - lastSeenAt);
+    var clock = $("clock");
+    if (clock) clock.textContent = txt;
+    if (lastConnOk) {
+      var el = $("conn");
+      if (el) el.textContent = "In diretta · " + txt;
+    }
+  }
+  function markDataSeen(s) {
+    var ts = s && s.ts_rome;
+    if (ts && ts !== lastSeenTsRome) {
+      lastSeenTsRome = ts;
+      lastSeenAt = Date.now();
+    } else if (!lastSeenAt) {
+      lastSeenAt = Date.now();
+    }
+    updateAge();
+  }
+  function tradeKey(t) {
+    return String(t.tx || t.solscan_tx || "") + "|" + (t.ts_rome || "") + "|" +
+      (t.symbol || "") + "|" + (t.side || "") + "|" + (t.reason || "");
+  }
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -734,22 +884,52 @@
     return { pts: pts, start: start, current: current, realized: realized };
   }
 
-  function drawChart(eq) {
-    var wrap = $("chart-wrap");
-    var empty = $("chart-empty");
-    var tip = $("chart-tip");
+  function interpolateChart(from, to, e) {
+    var fromU = from.usable, toU = to.usable;
+    var src = fromU;
+    if (fromU.length !== toU.length) {
+      src = fromU.slice();
+      if (src.length < toU.length) {
+        var pad = src.length ? src[src.length - 1] : toU[0];
+        while (src.length < toU.length) src.push(pad);
+      } else {
+        src = src.slice(0, toU.length);
+      }
+    }
+    var usable = [];
+    for (var i = 0; i < toU.length; i++) {
+      var a = src[i] || toU[i], b = toU[i];
+      var o = {};
+      for (var k in b) if (Object.prototype.hasOwnProperty.call(b, k)) o[k] = b[k];
+      o.y = (typeof a.y === "number" && typeof b.y === "number") ? a.y + (b.y - a.y) * e : b.y;
+      var ta = parseRome(a.t), tb = parseRome(b.t);
+      if (isFinite(ta) && isFinite(tb) && ta !== tb) {
+        var tm = ta + (tb - ta) * e;
+        var d = new Date(tm);
+        // keep label as destination time — geometry uses interpolated numeric t via _t
+        o._t = tm;
+      }
+      usable.push(o);
+    }
+    return {
+      usable: usable,
+      start: from.start + (to.start - from.start) * e,
+      current: from.current + (to.current - from.current) * e,
+      realized: from.realized + (to.realized - from.realized) * e,
+      yMin: from.yMin + (to.yMin - from.yMin) * e,
+      yMax: from.yMax + (to.yMax - from.yMax) * e,
+      tMin: from.tMin + (to.tMin - from.tMin) * e,
+      tMax: from.tMax + (to.tMax - from.tMax) * e,
+      w: to.w, h: to.h, padL: to.padL, padR: to.padR, padT: to.padT, padB: to.padB
+    };
+  }
+
+  function buildChartModel(eq) {
     var pts = eq.pts || [];
     chartPoints = pts;
     var usable = pts.filter(function (p) { return isFinite(p.y) && parseRome(p.t); });
-    if (usable.length < 1) {
-      var old = wrap.querySelector("svg");
-      if (old) old.remove();
-      empty.style.display = "flex";
-      empty.textContent = "In attesa del primo trade";
-      $("chart-meta").textContent = "";
-      return;
-    }
-    empty.style.display = "none";
+    if (usable.length < 1) return null;
+    var wrap = $("chart-wrap");
     var w = wrap.clientWidth || 390;
     var h = wrap.clientHeight || 196;
     var padL = 42, padR = 10, padT = 22, padB = 26;
@@ -761,7 +941,24 @@
     var ts = usable.map(function (p) { return parseRome(p.t); });
     var tMin = Math.min.apply(null, ts), tMax = Math.max.apply(null, ts);
     if (tMax <= tMin) tMax = tMin + 1;
-    function X(p) { return padL + (parseRome(p.t) - tMin) / (tMax - tMin) * (w - padL - padR); }
+    return {
+      usable: usable, start: eq.start, current: eq.current, realized: eq.realized,
+      yMin: yMin, yMax: yMax, tMin: tMin, tMax: tMax,
+      w: w, h: h, padL: padL, padR: padR, padT: padT, padB: padB
+    };
+  }
+
+  function paintChart(model) {
+    var wrap = $("chart-wrap");
+    var tip = $("chart-tip");
+    var w = model.w, h = model.h;
+    var padL = model.padL, padR = model.padR, padT = model.padT, padB = model.padB;
+    var usable = model.usable;
+    var yMin = model.yMin, yMax = model.yMax, span = yMax - yMin;
+    var tMin = model.tMin, tMax = model.tMax;
+    chartTipUsable = usable;
+    function TX(p) { return (p._t != null ? p._t : parseRome(p.t)); }
+    function X(p) { return padL + (TX(p) - tMin) / (tMax - tMin) * (w - padL - padR); }
     function Y(p) { return padT + (1 - (p.y - yMin) / span) * (h - padT - padB); }
 
     var path = "";
@@ -778,7 +975,7 @@
       grid += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (w - padR) + '" y2="' + gy.toFixed(1) + '" stroke="rgba(255,255,255,.06)" stroke-dasharray="3 5"/>';
       grid += '<text x="' + (padL - 6) + '" y="' + (gy + 3).toFixed(1) + '" text-anchor="end" fill="#63636c" font-size="9" font-variant="tabular-nums">' + fmtIT(yTicks[g], 3) + "</text>";
     }
-    var baseY = Y({ y: eq.start });
+    var baseY = Y({ y: model.start });
     grid += '<line x1="' + padL + '" y1="' + baseY.toFixed(1) + '" x2="' + (w - padR) + '" y2="' + baseY.toFixed(1) + '" stroke="rgba(255,255,255,.16)" stroke-dasharray="4 4"/>';
 
     var dots = "";
@@ -820,9 +1017,9 @@
       '<feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>' +
       "</filter>" +
       "</defs>" +
-      grid +
-      '<path d="' + area + '" fill="url(#eqArea)"/>' +
-      '<path d="' + path + '" fill="none" stroke="#3dff7a" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" filter="url(#eqGlow)"/>' +
+      '<g id="eq-grid">' + grid + "</g>" +
+      '<path id="eq-area" d="' + area + '" fill="url(#eqArea)"/>' +
+      '<path id="eq-line" d="' + path + '" fill="none" stroke="#3dff7a" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" filter="url(#eqGlow)"/>' +
       labels + dots + xLabs +
       "</svg>";
 
@@ -830,37 +1027,99 @@
     if (prev) prev.remove();
     wrap.insertAdjacentHTML("afterbegin", svg);
 
-    var delta = eq.current - eq.start;
-    $("chart-meta").textContent = (eq.realized != null ? signed(eq.realized, 4, "SOL") : "") + " realizzato";
-
-    wrap.querySelectorAll("circle.cpt").forEach(function (el) {
-      el.addEventListener("pointerenter", onTip);
-      el.addEventListener("pointerdown", onTip);
-    });
-    wrap.addEventListener("pointerleave", function () { tip.classList.remove("on"); });
-
-    function onTip(ev) {
-      var i = +ev.currentTarget.getAttribute("data-i");
-      var p = usable[i];
-      if (!p || (p.kind !== "buy" && p.kind !== "sell")) return;
-      var html = "<b>" + esc(p.kind === "buy" ? "Acquistato" : "Venduto") + " " + esc(p.symbol || "") + "</b><br>" +
-        esc(fmtWhen(p.t));
-      if (p.kind === "buy" && p.size != null) html += "<br>" + esc(fmtSol(p.size)) + " SOL";
-      if (p.kind === "sell") {
-        html += "<br><span class='" + pnlClass(p.pnl) + "'>" + esc(signed(p.pnl, 4, "SOL")) +
-          (p.pct != null ? "  " + signedPct(p.pct) : "") + "</span>";
-        if (p.reason) html += "<br>" + esc(reasonIt(p.reason));
-      }
-      tip.innerHTML = html;
-      tip.classList.add("on");
-      var rect = wrap.getBoundingClientRect();
-      var tx = X(p);
-      tx = Math.max(70, Math.min(rect.width - 70, tx));
-      tip.style.left = tx + "px";
-      tip.style.top = Math.max(18, Y(p)) + "px";
+    if (!chartTipBound) {
+      chartTipBound = true;
+      wrap.addEventListener("pointerdown", onChartTip);
+      wrap.addEventListener("pointerover", onChartTip);
+      wrap.addEventListener("pointerleave", function () { tip.classList.remove("on"); });
     }
   }
 
+  function onChartTip(ev) {
+    var el = ev.target;
+    if (!el || !el.getAttribute || !el.classList.contains("cpt")) return;
+    var wrap = $("chart-wrap");
+    var tip = $("chart-tip");
+    var i = +el.getAttribute("data-i");
+    var p = chartTipUsable[i];
+    if (!p || (p.kind !== "buy" && p.kind !== "sell")) return;
+    var html = "<b>" + esc(p.kind === "buy" ? "Acquistato" : "Venduto") + " " + esc(p.symbol || "") + "</b><br>" +
+      esc(fmtWhen(p.t));
+    if (p.kind === "buy" && p.size != null) html += "<br>" + esc(fmtSol(p.size)) + " SOL";
+    if (p.kind === "sell") {
+      html += "<br><span class='" + pnlClass(p.pnl) + "'>" + esc(signed(p.pnl, 4, "SOL")) +
+        (p.pct != null ? "  " + signedPct(p.pct) : "") + "</span>";
+      if (p.reason) html += "<br>" + esc(reasonIt(p.reason));
+    }
+    tip.innerHTML = html;
+    tip.classList.add("on");
+    var model = lastChartModel;
+    if (!model) return;
+    var w = model.w, padL = model.padL, padR = model.padR;
+    var span = model.yMax - model.yMin;
+    function TX(pt) { return (pt._t != null ? pt._t : parseRome(pt.t)); }
+    function X(pt) { return padL + (TX(pt) - model.tMin) / (model.tMax - model.tMin) * (w - padL - padR); }
+    function Y(pt) { return model.padT + (1 - (pt.y - model.yMin) / span) * (model.h - model.padT - model.padB); }
+    var rect = wrap.getBoundingClientRect();
+    var tx = X(p);
+    tx = Math.max(70, Math.min(rect.width - 70, tx));
+    tip.style.left = tx + "px";
+    tip.style.top = Math.max(18, Y(p)) + "px";
+  }
+
+  function drawChart(eq) {
+    var wrap = $("chart-wrap");
+    var empty = $("chart-empty");
+    var model = buildChartModel(eq);
+    if (!model) {
+      if (chartRaf) { cancelAnimationFrame(chartRaf); chartRaf = null; }
+      var old = wrap.querySelector("svg");
+      if (old) old.remove();
+      empty.style.display = "flex";
+      empty.textContent = "In attesa del primo trade";
+      $("chart-meta").textContent = "";
+      lastChartModel = null;
+      return;
+    }
+    empty.style.display = "none";
+    var deltaReal = model.realized;
+    $("chart-meta").textContent = (deltaReal != null ? signed(deltaReal, 4, "SOL") : "") + " realizzato";
+
+    if (chartRaf) { cancelAnimationFrame(chartRaf); chartRaf = null; }
+    if (reduceMotion || !lastChartModel) {
+      paintChart(model);
+      lastChartModel = model;
+      return;
+    }
+    var from = lastChartModel;
+    var to = model;
+    var t0 = performance.now();
+    function frame(now) {
+      var t = Math.min(1, (now - t0) / TWEEN_MS);
+      var e = easeOutCubic(t);
+      var mid = interpolateChart(from, to, e);
+      paintChart(mid);
+      if (t < 1) chartRaf = requestAnimationFrame(frame);
+      else {
+        chartRaf = null;
+        lastChartModel = to;
+        paintChart(to);
+      }
+    }
+    chartRaf = requestAnimationFrame(frame);
+  }
+
+  function paintPnl(pnlSol, pnlUsd, pnlPct) {
+    var pill = $("pnl-pill");
+    var solEl = $("pnl-sol"), usdEl = $("pnl-usd"), pctEl = $("pnl-pct");
+    if (!solEl) {
+      pill.innerHTML = "<span id='pnl-sol'></span><span class='sep'>·</span><span id='pnl-usd'></span><span class='sep'>·</span><span id='pnl-pct'></span>";
+      solEl = $("pnl-sol"); usdEl = $("pnl-usd"); pctEl = $("pnl-pct");
+    }
+    solEl.textContent = signed(pnlSol, 4, "SOL");
+    usdEl.textContent = pnlUsd != null ? signed(pnlUsd, 2, "$") : "—";
+    pctEl.textContent = signedPct(pnlPct);
+  }
   function renderHero(s) {
     var wallet = s.wallet || {};
     var live = s.live || {};
@@ -869,20 +1128,44 @@
     var sol = wallet.sol_display != null ? wallet.sol_display : wallet.sol;
     var usd = wallet.usd_value;
     var px = wallet.sol_price_usd;
-    $("bal").textContent = fmtSol(sol);
-    $("bal-usd").textContent = usd != null ? "≈ " + fmtUsd(usd) : (px && sol != null ? "≈ " + fmtUsd(Number(sol) * Number(px)) : "—");
-    var pnlSol = pnl.sol;
+    if (usd == null && px && sol != null) usd = Number(sol) * Number(px);
+    var pnlSol = pnl.sol != null ? Number(pnl.sol) : null;
     var pnlUsd = (pnl.usd != null && Number(pnl.usd) !== 0) ? Number(pnl.usd) : (pnlSol != null && px ? Number(pnlSol) * Number(px) : null);
     var start = (Number(ledger.desk_value_sol != null ? ledger.desk_value_sol : wallet.sol) || 0) - (Number(pnlSol) || 0);
     var pnlPct = (start && pnlSol != null) ? (Number(pnlSol) / start) * 100 : null;
     var cls = pnlClass(pnlSol);
     var pill = $("pnl-pill");
-    pill.className = "pnl-pill " + cls;
-    pill.innerHTML = "<span>" + esc(signed(pnlSol, 4, "SOL")) + "</span>" +
-      "<span class='sep'>·</span>" +
-      "<span>" + esc(pnlUsd != null ? signed(pnlUsd, 2, "$") : "—") + "</span>" +
-      "<span class='sep'>·</span>" +
-      "<span>" + esc(signedPct(pnlPct)) + "</span>";
+    var keepFlash = "";
+    if (pill.classList.contains("flash-up")) keepFlash = " flash-up";
+    else if (pill.classList.contains("flash-dn")) keepFlash = " flash-dn";
+    pill.className = "pnl-pill " + cls + keepFlash;
+
+    var dSol = changeDir(heroPrev.sol, sol, 0.0001);
+    var dUsd = changeDir(heroPrev.usd, usd, 0.5);
+    var dPnl = changeDir(heroPrev.pnlSol, pnlSol, 0.0001);
+    if (dSol) flash($("bal"), dSol);
+    if (dUsd) flash($("bal-usd"), dUsd);
+    if (dPnl) flash(pill, dPnl);
+
+    animateNum("sol", heroPrev.sol, sol, function (v) { $("bal").textContent = fmtSol(v); });
+    animateNum("usd", heroPrev.usd, usd, function (v) {
+      $("bal-usd").textContent = v != null ? "≈ " + fmtUsd(v) : "—";
+    });
+    paintPnl(heroPrev.pnlSol != null ? heroPrev.pnlSol : pnlSol,
+             heroPrev.pnlUsd != null ? heroPrev.pnlUsd : pnlUsd,
+             heroPrev.pnlPct != null ? heroPrev.pnlPct : pnlPct);
+    animateNum("pnlSol", heroPrev.pnlSol, pnlSol, function (vS) {
+      var el = $("pnl-sol"); if (el) el.textContent = signed(vS, 4, "SOL");
+    });
+    animateNum("pnlUsd", heroPrev.pnlUsd, pnlUsd, function (v) {
+      var el = $("pnl-usd"); if (el) el.textContent = v != null ? signed(v, 2, "$") : "—";
+    });
+    animateNum("pnlPct", heroPrev.pnlPct, pnlPct, function (v) {
+      var el = $("pnl-pct"); if (el) el.textContent = signedPct(v);
+    });
+
+    heroPrev = { sol: sol != null ? Number(sol) : null, usd: usd != null ? Number(usd) : null, pnlSol: pnlSol, pnlUsd: pnlUsd, pnlPct: pnlPct };
+
     var wins = pnl.wins || 0, losses = pnl.losses || 0;
     var closed = wins + losses;
     $("wl").innerHTML = "<span class='w'>" + fmtInt(wins) + " vinte</span> · <span class='l'>" +
@@ -995,12 +1278,18 @@
     });
     var box = $("feed");
     $("feed-meta").textContent = trades.length ? (trades.length + (trades.length === 1 ? " operazione" : " operazioni")) : "";
+    var prevKeys = seenTradeKeys;
+    var nextKeys = {};
+    trades.forEach(function (t) { nextKeys[tradeKey(t)] = true; });
     if (!trades.length) {
       box.innerHTML = '<div class="empty">Nessuna operazione live ancora</div>';
     } else {
       box.innerHTML = trades.map(function (t) {
         var buy = isBuy(t);
         var ico = buy ? "buy" : "sell";
+        var key = tradeKey(t);
+        var isNew = prevKeys && !prevKeys[key];
+        var enterCls = isNew ? (" enter" + (buy ? "" : " sell-enter")) : "";
         var title = (buy ? "Acquistato" : "Venduto") + " " + (t.symbol || "");
         var module = buy ? "Executor" : "Risk";
         var why = reasonIt(t.reason, t.side);
@@ -1012,7 +1301,7 @@
           ? '<div class="amt flat">' + esc(fmtSol(t.size_sol)) + " SOL</div>"
           : '<div class="amt ' + pnlClass(t.pnl_sol) + '">' + esc(signed(t.pnl_sol, 4, "SOL")) +
             (t.pnl_pct != null ? "<br>" + esc(signedPct(t.pnl_pct)) : "") + "</div>";
-        return '<article class="item">' +
+        return '<article class="item' + enterCls + '" data-key="' + esc(key) + '">' +
           '<div class="ico ' + ico + '">' + (buy ? ICO_UP : ICO_DN) + "</div>" +
           '<div class="body"><div class="title">' + esc(title) + "</div>" +
           '<div class="detail">' + esc(detail) + "</div>" +
@@ -1023,6 +1312,7 @@
           "</article>";
       }).join("");
     }
+    seenTradeKeys = nextKeys;
 
     var ev = (s.events || []).filter(function (e) { return e && e.type === "kill"; });
     var kt = $("kills-toggle"), kb = $("kills");
@@ -1098,7 +1388,8 @@
     var on = ok && (hb.status === "cycling" || hb.status === "sleeping" || hb.status === "running" || fresh);
     badge.className = "live-badge" + (on ? "" : " off");
     badge.innerHTML = "<i></i>" + (on ? "LIVE" : "OFF");
-    $("clock").textContent = fmtWhen(s.ts_rome) || "";
+    if (ok) markDataSeen(s);
+    else updateAge();
   }
 
   function render(s) {
@@ -1120,15 +1411,19 @@
   var fails = 0;
   function setConn(ok, extra) {
     var el = $("conn");
+    lastConnOk = !!ok;
     el.className = "conn " + (ok ? "ok" : "bad");
     if (ok) {
-      el.textContent = "In diretta · " + (extra || ("aggiornato " + fmtWhen((lastState && lastState.ts_rome) || "")));
+      updateAge();
+      if (extra) el.textContent = "In diretta · " + extra;
     } else {
       el.textContent = extra || "Connessione persa — riprovo…";
     }
   }
 
   function tick() {
+    if (inFlight) return;
+    inFlight = true;
     fetch("./state.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
@@ -1141,7 +1436,7 @@
       fails++;
       setConn(false, "Offline (" + (err && err.message ? err.message : "errore") + ")");
       if (lastState) renderLiveBadge(lastState, false);
-    });
+    }).then(function () { inFlight = false; }, function () { inFlight = false; });
   }
 
   $("kills-toggle").addEventListener("click", function () {
@@ -1167,6 +1462,7 @@
 
   tick();
   setInterval(tick, POLL_MS);
+  setInterval(updateAge, 1000);
 })();
 </script>
 </body>
