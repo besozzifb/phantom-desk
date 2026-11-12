@@ -649,6 +649,7 @@
 
   var POLL_MS = 1500;
   var TWEEN_MS = 600;
+  var SLOT_MS = 8000;
   var $ = function (id) { return document.getElementById(id); };
   var lastState = null;
   var killsOpen = false;
@@ -1421,13 +1422,31 @@
     }
   }
 
+  function stateUrls() {
+    var slot = Math.floor(Date.now() / SLOT_MS);
+    // Unique paths (not query strings) bypass the GitHub Pages CDN,
+    // which ignores ?t= and otherwise caches state.json for ~10 minutes.
+    return [
+      "./d/" + slot + ".json",
+      "./d/" + (slot - 1) + ".json",
+      "./d/" + (slot - 2) + ".json",
+      "./state.json?t=" + Date.now()
+    ];
+  }
+  function loadState(urls, i) {
+    if (i >= urls.length) return Promise.reject(new Error("nessuno snapshot"));
+    return fetch(urls[i], { cache: "no-store" }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).catch(function () {
+      return loadState(urls, i + 1);
+    });
+  }
   function tick() {
     if (inFlight) return;
     inFlight = true;
-    fetch("./state.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) {
-      if (!r.ok) throw new Error("HTTP " + r.status);
-      return r.json();
-    }).then(function (s) {
+    loadState(stateUrls(), 0).then(function (s) {
+      if (!s || typeof s !== "object") throw new Error("JSON non valido");
       fails = 0;
       render(s);
       renderLiveBadge(s, true);
